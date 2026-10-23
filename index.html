@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Form Filler</title>
+<style>
+  :root { --ink:#16222c; --muted:#5c6b78; --bg:#f2f5f7; --card:#fff; --line:#d9e0e6; --accent:#1c6e5b; --warn:#a4372a; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 80px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  input[type=url], input[type=number], input[type=date], input[type=time], textarea, select {
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; color:var(--ink); }
+  button { padding:10px 16px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button.alt { background:#e4eaee; color:var(--ink); font-weight:500; padding:6px 10px; font-size:.85rem; }
+  button.stop { background:var(--warn); }
+  button:disabled { opacity:.5; cursor:default; }
+  :focus-visible { outline:3px solid #7fb8a8; outline-offset:2px; }
+  .q { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin:14px 0; }
+  .q h3 { margin:0 0 2px; font-size:1.05rem; }
+  .head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; }
+  .q.off { opacity:.5; }
+  .q.off .body, .q.off .rules, .q.off .addrule { pointer-events:none; }
+  .meta { color:var(--muted); font-size:.85rem; margin-bottom:10px; }
+  .opt { display:grid; grid-template-columns: 1fr 120px 48px; gap:10px; align-items:center; padding:4px 0; }
+  .opt .l { overflow-wrap:anywhere; }
+  .opt .pct { text-align:right; font-variant-numeric: tabular-nums; color:var(--muted); }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  .tools { display:flex; gap:6px; margin:6px 0 4px; }
+  .rowlab { font-weight:600; margin-top:12px; font-size:.95rem; }
+  .rule { border-left:3px solid var(--accent); background:#f7faf9; padding:10px 12px; margin-top:12px; border-radius:0 8px 8px 0; }
+  .rhead { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:8px; }
+  .rhead select { width:auto; max-width:230px; }
+  .addrule { margin-top:12px; }
+  .f { font-size:.85rem; color:var(--muted); display:block; margin-bottom:4px; }
+  .skip { color:var(--warn); font-size:.9rem; }
+  .run { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:20px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:12px; }
+  progress { width:100%; height:10px; margin-top:12px; accent-color: var(--accent); }
+  #log, #msg { font-size:.9rem; color:var(--muted); margin-top:8px; }
+  .err { color:var(--warn); margin-top:10px; }
+  .tablewrap { overflow-x:auto; margin-top:12px; border:1px solid var(--line); border-radius:8px; background:#fff; }
+  table { border-collapse:collapse; font-size:.82rem; min-width:100%; }
+  th, td { padding:6px 10px; border-bottom:1px solid var(--line); text-align:left; white-space:nowrap; max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+  th { background:#eef2f4; }
+  .notice { font-size:.85rem; color:var(--muted); margin-top:28px; }
+  .hide { display:none; }
+  @media (max-width:520px){ .opt { grid-template-columns: 1fr 90px 44px; } .grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Form Filler</h1>
+  <p class="sub">Paste a Google Form link, set how answers should be spread, preview, then send test responses.</p>
+
+  <div class="row">
+    <input id="url" type="url" style="flex:1" placeholder="https://docs.google.com/forms/d/e/.../viewform" aria-label="Google Form link">
+    <button id="load">Load form</button>
+  </div>
+  <div id="err" class="err"></div>
+
+  <section id="config" class="hide">
+    <h2 id="title" style="margin:24px 0 0;font-size:1.2rem"></h2>
+    <div id="msg"></div>
+    <div id="questions"></div>
+
+    <div class="run">
+      <div class="grid">
+        <div><label class="f" for="count">Number of responses</label><input id="count" type="number" min="1" max="500" value="20"></div>
+        <div><label class="f" for="delay">Average delay (ms)</label><input id="delay" type="number" min="200" step="100" value="1500"></div>
+        <div><label class="f" for="win">Or spread over (minutes)</label><input id="win" type="number" min="0" placeholder="optional"></div>
+      </div>
+      <div class="row">
+        <button id="preview" class="alt">Preview 10</button>
+        <button id="start">Start sending</button>
+        <button id="stop" class="stop hide">Stop</button>
+        <button id="csv" class="alt">Download CSV</button>
+        <button id="save" class="alt">Save settings</button>
+        <button id="clear" class="alt">Clear saved</button>
+      </div>
+      <progress id="bar" value="0" max="1" class="hide"></progress>
+      <div id="log"></div>
+      <div id="tbl" class="tablewrap hide"></div>
+    </div>
+  </section>
+
+  <p class="notice">Use this only on forms you own or have permission to test. Filling someone else's survey with generated answers corrupts their results.</p>
+</main>
+
+<script>
+const $ = (s, el = document) => el.querySelector(s);
+const CHOICE = ["radio", "dropdown", "scale", "checkbox"];
+let form = null, abort = null, rows = [];
+
+// ---------- building blocks ----------
+function sliders(host, labels, init, pct, bell) {
+  const wrap = document.createElement("div");
+  labels.forEach((l, i) => {
+    const r = document.createElement("div");
+    r.className = "opt";
+    r.innerHTML = `<span class="l"></span><input type="range" min="0" max="100"><span class="pct"></span>`;
+    $(".l", r).textContent = l;
+    $("input", r).value = init?.[i] ?? 50;
+    wrap.appendChild(r);
+  });
+  const rs = () => [...wrap.querySelectorAll("input")];
+  const update = () => {
+    const t = rs().reduce((a, r) => a + +r.value, 0);
+    rs().forEach(r => r.nextElementSibling.textContent = pct ? r.value + "%" : (t ? Math.round(r.value / t * 100) : Math.round(100 / rs().length)) + "%");
+  };
+  wrap.oninput = update; update();
+  const set = fn => { rs().forEach((r, i, a) => r.value = fn(i, a.length)); update(); };
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  tools.innerHTML = `<button class="alt" data-a="e">Even</button><button class="alt" data-a="r">Random mix</button>` + (bell ? `<button class="alt" data-a="b">Bell curve</button>` : "");
+  tools.onclick = e => {
+    const a = e.target.dataset.a;
+    if (a === "e") set(() => 50);
+    if (a === "r") set(() => Math.round(Math.random() * 100));
+    if (a === "b") set((i, n) => Math.round(100 * Math.exp(-Math.pow((i - (n - 1) / 2) / (n / 4 || 1), 2) / 2)));
+  };
+  host.append(wrap, tools);
+  return () => rs().map(r => +r.value);
+}
+
+function controls(q, host, cfg = {}) {
+  if (CHOICE.includes(q.type)) {
+    const box = q.type === "checkbox";
+    const get = sliders(host, q.options, box ? cfg.probs : cfg.weights, box, q.type === "scale");
+    let ta = null;
+    if (q.otherIndex >= 0) {
+      host.insertAdjacentHTML("beforeend", `<label class="f" style="margin-top:8px">Text answers for "Other", one per line</label><textarea rows="2"></textarea>`);
+      ta = $("textarea", host);
+      ta.value = (cfg.other || []).join("\n");
+    }
+    return () => ({ [box ? "probs" : "weights"]: get(), other: ta ? ta.value.split("\n").map(s => s.trim()) : [] });
+  }
+  if (q.type === "grid") {
+    const gs = q.rows.map((r, ri) => {
+      const h = document.createElement("div");
+      h.innerHTML = `<div class="rowlab"></div>`;
+      $(".rowlab", h).textContent = r.label || "Row " + (ri + 1);
+      host.appendChild(h);
+      return sliders(h, q.options, cfg.rows?.[ri], false, false);
+    });
+    return () => ({ rows: gs.map(g => g()) });
+  }
+  if (q.type === "short" || q.type === "paragraph") {
+    host.insertAdjacentHTML("beforeend", `<label class="f">Possible answers, one per line</label><textarea rows="4"></textarea>
+      <label class="f" style="margin-top:8px">How to pick</label>
+      <select class="mode"><option value="random">Random each time (repeats allowed)</option><option value="balanced">Balanced shuffle (each answer used evenly)</option></select>`);
+    const ta = $("textarea", host), sel = $(".mode", host);
+    ta.value = (cfg.answers || []).join("\n");
+    sel.value = cfg.mode || "random";
+    return () => ({ answers: ta.value.split("\n").map(s => s.trim()), mode: sel.value });
+  }
+  if (q.type === "date" || q.type === "time") {
+    const t = q.type;
+    host.insertAdjacentHTML("beforeend", `<div class="row"><div style="flex:1"><label class="f">From</label><input type="${t}" class="from"></div><div style="flex:1"><label class="f">To</label><input type="${t}" class="to"></div></div>`);
+    $(".from", host).value = cfg.from ?? (t === "time" ? "09:00" : "");
+    $(".to", host).value = cfg.to ?? (t === "time" ? "17:00" : "");
+    return () => ({ from: $(".from", host).value, to: $(".to", host).value });
+  }
+  host.innerHTML = `<div class="skip">This question type is not supported yet and will be left blank.${q.required ? " It is required, so submissions may be rejected." : ""}</div>`;
+  return () => ({});
+}
+
+// ---------- conditional rules ----------
+function addRule(card, qi, r) {
+  const q = form.questions[qi];
+  const earlier = form.questions.map((x, i) => [x, i]).filter(([x, i]) => i < qi && CHOICE.includes(x.type));
+  const blk = document.createElement("div");
+  blk.className = "rule";
+  blk.innerHTML = `<div class="rhead"><span>When</span><select class="rq"></select><span>is</span><select class="rv"></select><button class="alt rm">Remove</button></div><div class="rbody"></div>`;
+  const rq = $(".rq", blk), rv = $(".rv", blk);
+  earlier.forEach(([x, i]) => rq.add(new Option(`${i + 1}. ${x.title.slice(0, 40)}`, i)));
+  const fill = () => { rv.innerHTML = ""; form.questions[+rq.value].options.forEach(o => rv.add(new Option(o, o))); };
+  if (r) rq.value = r.q;
+  fill();
+  if (r) rv.value = r.value;
+  rq.onchange = fill;
+  $(".rm", blk).onclick = () => blk.remove();
+  blk._get = controls(q, $(".rbody", blk), r?.config);
+  $(".rules", card).appendChild(blk);
+}
+
+// ---------- render ----------
+function setSkip(card, q, on) {
+  card.classList.toggle("off", on);
+  $(".skipbtn", card).textContent = on ? "Include" : "Skip";
+  $(".meta", card).textContent = on
+    ? (q.required ? "Skipped. This question is required, so Google may reject submissions." : "Skipped. This question will be left blank.")
+    : card._base;
+}
+
+function render(snap) {
+  $("#title").textContent = form.title;
+  const box = $("#questions");
+  box.innerHTML = "";
+  form.questions.forEach((q, i) => {
+    const card = document.createElement("div");
+    card.className = "q";
+    card.dataset.i = i;
+    const label = { short:"Short text", paragraph:"Paragraph", radio:"Multiple choice", dropdown:"Dropdown", checkbox:"Checkboxes", scale:"Linear scale", grid:"Grid", date:"Date", time:"Time", unsupported:"Not supported" }[q.type];
+    card._base = `${label}${q.required ? ", required" : ""}`;
+    card.innerHTML = `<div class="head"><h3></h3><button class="alt skipbtn">Skip</button></div><div class="meta"></div><div class="body"></div><div class="rules"></div>`;
+    $("h3", card).textContent = `${i + 1}. ${q.title}`;
+    $(".meta", card).textContent = card._base;
+    $(".skipbtn", card).onclick = () => setSkip(card, q, !card.classList.contains("off"));
+    card._get = controls(q, $(".body", card), snap?.[i]?.config);
+    if (q.type !== "unsupported" && form.questions.some((x, j) => j < i && CHOICE.includes(x.type))) {
+      const b = document.createElement("button");
+      b.className = "alt addrule";
+      b.textContent = "Add rule: change answers based on an earlier answer";
+      b.onclick = () => addRule(card, i);
+      card.appendChild(b);
+      (snap?.[i]?.rules || []).forEach(r => addRule(card, i, r));
+    }
+    if (snap?.[i]?.skip) setSkip(card, q, true);
+    box.appendChild(card);
+  });
+  $("#config").classList.remove("hide");
+}
+
+function snapshot() {
+  return form.questions.map((q, i) => {
+    const card = $(`.q[data-i="${i}"]`);
+    return {
+      skip: card.classList.contains("off"),
+      config: card._get(),
+      rules: [...card.querySelectorAll(".rule")].map(b => ({ q: +$(".rq", b).value, value: $(".rv", b).value, config: b._get() })),
+    };
+  });
+}
+const payload = () => snapshot().flatMap((s, i) => s.skip ? [] : [{ ...form.questions[i], idx: i, config: s.config, rules: s.rules }]);
+const key = () => "ff:" + form.action;
+
+// ---------- load ----------
+$("#load").onclick = async () => {
+  $("#err").textContent = ""; $("#msg").textContent = "";
+  $("#load").disabled = true;
+  try {
+    const r = await fetch("/api/parse", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ url: $("#url").value.trim() }) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error);
+    form = d;
+    let snap = null;
+    try { snap = JSON.parse(localStorage.getItem(key())); } catch {}
+    if (snap && snap.length !== form.questions.length) snap = null;
+    render(snap);
+    if (snap) $("#msg").textContent = "Saved settings for this form were loaded.";
+  } catch (e) { $("#err").textContent = e.message; }
+  $("#load").disabled = false;
+};
+
+$("#save").onclick = () => { try { localStorage.setItem(key(), JSON.stringify(snapshot())); $("#msg").textContent = "Settings saved for this form."; } catch { $("#msg").textContent = "Could not save settings."; } };
+$("#clear").onclick = () => { try { localStorage.removeItem(key()); } catch {} $("#msg").textContent = "Saved settings cleared."; };
+
+// ---------- preview, send, export ----------
+function showTable(list, note) {
+  const t = $("#tbl");
+  if (!list.length) { t.classList.add("hide"); return; }
+  const h = Object.keys(list[0]);
+  t.innerHTML = `<table><thead><tr><th>#</th>${h.map(x => `<th></th>`).join("")}</tr></thead><tbody></tbody></table>`;
+  [...t.querySelectorAll("th")].slice(1).forEach((th, i) => th.textContent = h[i]);
+  const tb = $("tbody", t);
+  list.forEach((r, n) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${n + 1}</td>` + h.map(() => `<td></td>`).join("");
+    [...tr.children].slice(1).forEach((td, i) => { td.textContent = r[h[i]] ?? ""; td.title = r[h[i]] ?? ""; });
+    tb.appendChild(tr);
+  });
+  t.classList.remove("hide");
+}
+
+$("#preview").onclick = async () => {
+  const r = await fetch("/api/preview", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ questions: payload() }) });
+  rows = (await r.json()).rows;
+  $("#log").textContent = "Preview only. Nothing was sent.";
+  showTable(rows);
+};
+
+$("#start").onclick = async () => {
+  abort = new AbortController();
+  $("#start").classList.add("hide"); $("#stop").classList.remove("hide");
+  const bar = $("#bar"); bar.classList.remove("hide"); bar.value = 0;
+  rows = [];
+  let sent = 0, failed = 0;
+  try {
+    const r = await fetch("/api/submit", {
+      method: "POST", signal: abort.signal, headers: { "Content-Type":"application/json" },
+      body: JSON.stringify({ action: form.action, sections: form.sections, questions: payload(), count: +$("#count").value, delayMs: +$("#delay").value, windowMin: +$("#win").value }),
+    });
+    const reader = r.body.getReader(), dec = new TextDecoder();
+    let buf = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const ls = buf.split("\n"); buf = ls.pop();
+      for (const l of ls) {
+        const m = JSON.parse(l);
+        m.ok ? sent++ : failed++;
+        rows.push(m.row);
+        bar.max = m.n; bar.value = m.i;
+        $("#log").textContent = `${sent} sent, ${failed} failed (${m.i} of ${m.n})`;
+      }
+    }
+    $("#log").textContent += ". Done.";
+  } catch (e) { $("#log").textContent += e.name === "AbortError" ? ". Stopped." : " " + e.message; }
+  showTable(rows.slice(0, 50));
+  $("#start").classList.remove("hide"); $("#stop").classList.add("hide");
+};
+$("#stop").onclick = () => abort && abort.abort();
+
+$("#csv").onclick = () => {
+  if (!rows.length) { $("#log").textContent = "Nothing to export yet. Run a preview or send first."; return; }
+  const h = Object.keys(rows[0]), q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const t = [h.map(q).join(","), ...rows.map(r => h.map(k => q(r[k])).join(","))].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + t], { type: "text/csv" }));
+  a.download = "responses.csv";
+  a.click();
+};
+</script>
+</body>
+</html>
